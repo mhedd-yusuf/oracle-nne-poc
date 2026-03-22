@@ -1,5 +1,6 @@
 package com.poc;
 
+import oracle.jdbc.OracleConnection;
 import oracle.jdbc.pool.OracleDataSource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -64,6 +65,7 @@ public class DataSourceConfig {
     @Bean
     public DataSource dataSource() throws SQLException {
         String url = String.format("jdbc:oracle:thin:@//%s:%s/%s", host, port, service);
+        //String url = "jdbc:oracle:thin:@//localhost:1521/FREEPDB1?oracle.net.encryption_client=REQUIRED&oracle.net.encryption_types_client=AES256&oracle.net.crypto_checksum_client=REQUIRED&oracle.net.crypto_checksum_types_client=SHA256";
 
         OracleDataSource ds = new OracleDataSource();
         ds.setURL(url);
@@ -78,7 +80,7 @@ public class DataSourceConfig {
         props.setProperty("oracle.net.crypto_checksum_types_client", checksumTypes);
         // Sets V$SESSION.PROGRAM to identify this app in DB monitoring queries
         props.setProperty("v$session.program", appName);
-        //ds.setConnectionProperties(props);
+        ds.setConnectionProperties(props);
 
         return ds;
     }
