@@ -60,11 +60,17 @@ nne.encryption.client=REQUIRED
 nne.checksum.client=REQUIRED
 ```
 
+> `DataSourceConfig` passes NNE values as Java connection properties via
+> `OracleDataSource.setConnectionProperties()`. The Oracle JDBC **Thin** driver reads NNE
+> settings from `oracle.net.encryption_client` / `oracle.net.crypto_checksum_client`
+> connection properties — **not** from a SECURITY section in the TNS descriptor (that section
+> is only read by OCI clients such as sqlplus).
+
 **Server-side** — `docker/sqlnet.ora`:
 
 ```
-SQLNET.ENCRYPTION_SERVER      = REQUIRED
-SQLNET.CRYPTO_CHECKSUM_SERVER = REQUIRED
+SQLNET.ENCRYPTION_SERVER          = REQUIRED
+SQLNET.CRYPTO_CHECKSUM_SERVER     = REQUIRED
 ```
 
 > **Note:** `docker/sqlnet.ora` is read by the init script during first database creation.
@@ -83,49 +89,116 @@ SQLNET.CRYPTO_CHECKSUM_SERVER = REQUIRED
 docker exec -it oracle-nne-poc sqlplus appuser/AppUser123@FREEPDB1
 ```
 
-Then run this query:
+Then run this query to see all active user sessions, their application name, and whether NNE is active:
 
 ```sql
-SELECT network_service_banner
-FROM   v$session_connect_info
-WHERE  sid = SYS_CONTEXT('USERENV', 'SID')
-ORDER  BY 1;
+SET LINESIZE 120
+SET PAGESIZE 50
+COLUMN sid        FORMAT 99999   HEADING 'SID'
+COLUMN serial#    FORMAT 9999999 HEADING 'SERIAL#'
+COLUMN program    FORMAT A20     HEADING 'PROGRAM'
+COLUMN machine    FORMAT A20     HEADING 'MACHINE'
+COLUMN logon_time FORMAT A20     HEADING 'LOGON_TIME'
+COLUMN status     FORMAT A10     HEADING 'STATUS'
+COLUMN encrypted  FORMAT A9      HEADING 'ENCRYPTED'
+COLUMN checksum   FORMAT A8      HEADING 'CHECKSUM'
+
+SELECT
+    s.sid,
+    s.serial#,
+    s.program,
+    s.machine,
+    s.logon_time,
+    s.status,
+    MAX(CASE WHEN sci.network_service_banner LIKE '%Encryption service adapter%'        THEN 'YES' ELSE 'NO' END) AS encrypted,
+    MAX(CASE WHEN sci.network_service_banner LIKE '%Crypto-checksumming service adapter%' THEN 'YES' ELSE 'NO' END) AS checksum
+FROM v$session s
+LEFT JOIN v$session_connect_info sci
+    ON s.sid = sci.sid AND s.serial# = sci.serial#
+WHERE s.type     = 'USER'
+  AND s.username IS NOT NULL
+GROUP BY s.sid, s.serial#, s.program, s.machine, s.logon_time, s.status
+ORDER BY s.logon_time DESC;
+```
+
+> **Why these specific patterns?** Oracle always emits a generic "Encryption service for Linux" banner even for
+> plaintext connections (it is the service framework being loaded). The actual encryption is only active when
+> the algorithm-specific adapter banner appears — e.g. "AES256 Encryption service adapter for linux-x86-64".
+> Using `LIKE '%Encryption%'` matches the generic banner and always returns `YES`, giving a false positive on
+> plaintext connections. The corrected patterns `'%Encryption service adapter%'` and
+> `'%Crypto-checksumming service adapter%'` match only when a specific algorithm has been negotiated.
+
+To filter by time (e.g. sessions from the last 30 minutes), add:
+
+```sql
+  AND s.logon_time >= SYSDATE - INTERVAL '30' MINUTE
 ```
 
 ### Option B — Single docker exec command (no interactive session needed)
 
 ```bash
-docker exec oracle-nne-poc bash -c "sqlplus -s appuser/AppUser123@FREEPDB1 @/dev/stdin" <<'EOF'
-SELECT network_service_banner
-FROM   v$session_connect_info
-WHERE  sid = SYS_CONTEXT('USERENV', 'SID')
-ORDER  BY 1;
+docker exec -i oracle-nne-poc sqlplus -s appuser/AppUser123@FREEPDB1 <<'EOF'
+SET LINESIZE 120
+SET PAGESIZE 50
+COLUMN sid        FORMAT 99999   HEADING 'SID'
+COLUMN serial#    FORMAT 9999999 HEADING 'SERIAL#'
+COLUMN program    FORMAT A20     HEADING 'PROGRAM'
+COLUMN machine    FORMAT A20     HEADING 'MACHINE'
+COLUMN logon_time FORMAT A20     HEADING 'LOGON_TIME'
+COLUMN status     FORMAT A10     HEADING 'STATUS'
+COLUMN encrypted  FORMAT A9      HEADING 'ENCRYPTED'
+COLUMN checksum   FORMAT A8      HEADING 'CHECKSUM'
+SELECT
+    s.sid,
+    s.serial#,
+    s.program,
+    s.machine,
+    s.logon_time,
+    s.status,
+    MAX(CASE WHEN sci.network_service_banner LIKE '%Encryption service adapter%'        THEN 'YES' ELSE 'NO' END) AS encrypted,
+    MAX(CASE WHEN sci.network_service_banner LIKE '%Crypto-checksumming service adapter%' THEN 'YES' ELSE 'NO' END) AS checksum
+FROM v$session s
+LEFT JOIN v$session_connect_info sci
+    ON s.sid = sci.sid AND s.serial# = sci.serial#
+WHERE s.type     = 'USER'
+  AND s.username IS NOT NULL
+GROUP BY s.sid, s.serial#, s.program, s.machine, s.logon_time, s.status
+ORDER BY s.logon_time DESC;
 EXIT;
 EOF
 ```
 
 ### Expected outputs
 
-**Encrypted** — output includes:
+**Encrypted** — `ENCRYPTED` and `CHECKSUM` columns show `YES`:
 ```
-AES256 Encryption service adapter for linux-x86-64
-SHA-256 Crypto-checksumming service adapter for linux-x86-64
+SID  SERIAL#  PROGRAM          MACHINE     LOGON_TIME           STATUS    ENCRYPTED  CHECKSUM
+---  -------  ---------------  ----------  -------------------  --------  ---------  --------
+ 23      441  oracle-nne-poc   macbook     22-MAR-26 10:01:05   INACTIVE  YES        YES
 ```
 
-**Plaintext** — output is:
+**Plaintext** — `ENCRYPTED` and `CHECKSUM` columns show `NO`:
 ```
-no rows selected
+SID  SERIAL#  PROGRAM          MACHINE     LOGON_TIME           STATUS    ENCRYPTED  CHECKSUM
+---  -------  ---------------  ----------  -------------------  --------  ---------  --------
+ 31      108  oracle-nne-poc   macbook     22-MAR-26 10:00:47   INACTIVE  NO         NO
 ```
+
+The `PROGRAM` column reflects `app.name` in `application.properties` — change it per application to tell connections apart when multiple apps connect to the same database.
 
 ---
 
 ## Scenarios
 
+> **Note on rebuilding:**
+> - **IntelliJ** — reads `src/main/resources/application.properties` directly from source. Just edit and re-run, no rebuild needed.
+> - **Command line JAR** — run `./gradlew bootJar` after editing `application.properties`.
+
 For each scenario:
-1. Edit `application.properties`
-2. Edit `docker/sqlnet.ora`
+1. Edit `src/main/resources/application.properties` — client-side NNE settings
+2. Edit `docker/sqlnet.ora` — server-side NNE settings
 3. Recreate the container: `cd docker && docker compose down -v && docker compose up -d`
-4. Run the app: `java -jar build/libs/oracle-nne-poc.jar`
+4. Run the app — from IntelliJ click Run, or from terminal: `java -jar build/libs/oracle-nne-poc.jar`
 5. Validate with the docker exec command (Option B above)
 
 ---
@@ -362,9 +435,9 @@ SQLNET.ENCRYPTION_SERVER          = REQUESTED
 SQLNET.CRYPTO_CHECKSUM_SERVER     = REQUESTED
 ```
 
-**Expected result:** App runs successfully (no error). Sqlplus shows:
+**Expected result:** App runs successfully (no error). Option B shows `ENCRYPTED: NO, CHECKSUM: NO`:
 ```
-no rows selected
+ 31      108  oracle-nne-poc   macbook     22-MAR-26 10:00:47   INACTIVE  NO         NO
 ```
 
 ---
@@ -383,9 +456,9 @@ SQLNET.ENCRYPTION_SERVER          = ACCEPTED
 SQLNET.CRYPTO_CHECKSUM_SERVER     = ACCEPTED
 ```
 
-**Expected result:** App runs successfully (no error). Sqlplus shows:
+**Expected result:** App runs successfully (no error). Option B shows `ENCRYPTED: NO, CHECKSUM: NO`:
 ```
-no rows selected
+ 31      108  oracle-nne-poc   macbook     22-MAR-26 10:00:47   INACTIVE  NO         NO
 ```
 
 ---
@@ -404,9 +477,9 @@ SQLNET.ENCRYPTION_SERVER          = ACCEPTED
 SQLNET.CRYPTO_CHECKSUM_SERVER     = ACCEPTED
 ```
 
-**Expected result:** App runs successfully (no error). Sqlplus shows:
+**Expected result:** App runs successfully (no error). Option B shows `ENCRYPTED: NO, CHECKSUM: NO`:
 ```
-no rows selected
+ 31      108  oracle-nne-poc   macbook     22-MAR-26 10:00:47   INACTIVE  NO         NO
 ```
 
 ---
@@ -425,9 +498,9 @@ SQLNET.ENCRYPTION_SERVER          = REJECTED
 SQLNET.CRYPTO_CHECKSUM_SERVER     = REJECTED
 ```
 
-**Expected result:** App runs successfully (no error). Sqlplus shows:
+**Expected result:** App runs successfully (no error). Option B shows `ENCRYPTED: NO, CHECKSUM: NO`:
 ```
-no rows selected
+ 31      108  oracle-nne-poc   macbook     22-MAR-26 10:00:47   INACTIVE  NO         NO
 ```
 
 ---
@@ -446,9 +519,9 @@ SQLNET.ENCRYPTION_SERVER          = REJECTED
 SQLNET.CRYPTO_CHECKSUM_SERVER     = REJECTED
 ```
 
-**Expected result:** App runs successfully (no error). Sqlplus shows:
+**Expected result:** App runs successfully (no error). Option B shows `ENCRYPTED: NO, CHECKSUM: NO`:
 ```
-no rows selected
+ 31      108  oracle-nne-poc   macbook     22-MAR-26 10:00:47   INACTIVE  NO         NO
 ```
 
 ---
@@ -467,23 +540,18 @@ SQLNET.ENCRYPTION_SERVER          = REJECTED
 SQLNET.CRYPTO_CHECKSUM_SERVER     = REJECTED
 ```
 
-**Expected result:** App runs successfully (no error). Sqlplus shows:
+**Expected result:** App runs successfully (no error). Option B shows `ENCRYPTED: NO, CHECKSUM: NO`:
 ```
-no rows selected
+ 31      108  oracle-nne-poc   macbook     22-MAR-26 10:00:47   INACTIVE  NO         NO
 ```
 
 ---
 
-### Scenario 17 — No NNE properties in application.properties
+### Scenario 17 — No NNE settings in application.properties
 
-Remove all `nne.*` lines from `application.properties`. The client defaults to `ACCEPTED`.
+Remove the `nne.*` lines from `application.properties`. The client defaults to `ACCEPTED`.
 
-**`application.properties`**
-```properties
-spring.datasource.url=jdbc:oracle:thin:@//localhost:1521/FREEPDB1
-spring.datasource.username=appuser
-spring.datasource.password=AppUser123
-```
+**`application.properties`** — omit nne.* lines
 
 **`docker/sqlnet.ora`** — behaviour depends on the server setting:
 

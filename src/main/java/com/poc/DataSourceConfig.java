@@ -10,25 +10,35 @@ import java.sql.SQLException;
 import java.util.Properties;
 
 /**
- * Defines the OracleDataSource bean with Native Network Encryption (NNE) properties.
+ * Defines the OracleDataSource bean with NNE settings passed as connection properties.
  *
- * Why a custom @Bean instead of Spring Boot auto-configuration?
- *   Spring Boot's DataSourceAutoConfiguration builds a HikariCP pool by default.
- *   NNE connection properties must be set directly on OracleDataSource before
- *   the first connection is made — they cannot be injected through a pool layer.
- *   Providing this @Bean causes Spring Boot to back off from auto-configuring
- *   its own DataSource, so JdbcTemplate is wired to our OracleDataSource instead.
+ * Why use setConnectionProperties() instead of embedding in the TNS descriptor?
+ *   oracle.jdbc.pool.OracleDataSource uses the Oracle JDBC Thin driver, which is a
+ *   pure-Java reimplementation of Oracle Net. Unlike the OCI driver (used by sqlplus),
+ *   the Thin driver does NOT read NNE settings from the SECURITY section of a TNS
+ *   connection descriptor. Embedding (SECURITY=(ENCRYPTION_CLIENT=REJECTED)...) in the
+ *   URL is silently ignored for NNE purposes.
  *
- * Property binding:
- *   spring.datasource.* — standard Spring Boot datasource properties
- *   nne.*               — custom NNE properties defined in application.properties
+ *   The Thin driver reads NNE settings from Java connection properties with the keys:
+ *     oracle.net.encryption_client       — REQUIRED | REQUESTED | ACCEPTED | REJECTED
+ *     oracle.net.encryption_types_client — algorithm list, e.g. (AES256)
+ *     oracle.net.crypto_checksum_client
+ *     oracle.net.crypto_checksum_types_client
+ *
+ *   These are passed via OracleDataSource.setConnectionProperties() and are applied
+ *   during the TNS handshake when each connection is opened.
  */
 @Configuration
 public class DataSourceConfig {
 
-    // Standard Spring Boot datasource keys
-    @Value("${spring.datasource.url}")
-    private String url;
+    @Value("${spring.datasource.host}")
+    private String host;
+
+    @Value("${spring.datasource.port}")
+    private String port;
+
+    @Value("${spring.datasource.service}")
+    private String service;
 
     @Value("${spring.datasource.username}")
     private String username;
@@ -36,8 +46,9 @@ public class DataSourceConfig {
     @Value("${spring.datasource.password}")
     private String password;
 
-    // NNE client-side negotiation settings (defaults to ACCEPTED so the app
-    // still starts when nne.* properties are omitted from application.properties)
+    @Value("${app.name:oracle-app}")
+    private String appName;
+
     @Value("${nne.encryption.client:ACCEPTED}")
     private String encryptionClient;
 
@@ -50,36 +61,24 @@ public class DataSourceConfig {
     @Value("${nne.checksum.types:(SHA256)}")
     private String checksumTypes;
 
-    /**
-     * Creates an OracleDataSource with NNE connection properties.
-     *
-     * OracleDataSource setter methods (setURL, setUser, setPassword,
-     * setConnectionProperties) declare throws SQLException, so the @Bean
-     * method declares it too — Spring handles checked exceptions from @Bean
-     * factory methods transparently.
-     */
     @Bean
     public DataSource dataSource() throws SQLException {
+        String url = String.format("jdbc:oracle:thin:@//%s:%s/%s", host, port, service);
+
         OracleDataSource ds = new OracleDataSource();
         ds.setURL(url);
         ds.setUser(username);
         ds.setPassword(password);
 
-        /*
-         * NNE is negotiated during the TNS handshake, before any SQL is sent.
-         * These four properties control what the client proposes to the server:
-         *
-         *   oracle.net.encryption_client       — willingness to encrypt
-         *   oracle.net.encryption_types_client — preferred cipher list
-         *   oracle.net.crypto_checksum_client       — willingness to checksum
-         *   oracle.net.crypto_checksum_types_client — preferred hash algorithm
-         */
-        Properties nne = new Properties();
-        nne.setProperty("oracle.net.encryption_client",             encryptionClient);
-        nne.setProperty("oracle.net.encryption_types_client",       encryptionTypes);
-        nne.setProperty("oracle.net.crypto_checksum_client",        checksumClient);
-        nne.setProperty("oracle.net.crypto_checksum_types_client",  checksumTypes);
-        ds.setConnectionProperties(nne);
+        Properties props = new Properties();
+        // NNE client settings — read by the JDBC Thin driver during the TNS handshake
+        props.setProperty("oracle.net.encryption_client",       encryptionClient);
+        props.setProperty("oracle.net.encryption_types_client", encryptionTypes);
+        props.setProperty("oracle.net.crypto_checksum_client",       checksumClient);
+        props.setProperty("oracle.net.crypto_checksum_types_client", checksumTypes);
+        // Sets V$SESSION.PROGRAM to identify this app in DB monitoring queries
+        props.setProperty("v$session.program", appName);
+        //ds.setConnectionProperties(props);
 
         return ds;
     }

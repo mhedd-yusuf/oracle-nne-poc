@@ -7,10 +7,10 @@
 # --------------------------------------------------------
 set -e
 
-echo ">>> Granting V\$SESSION_CONNECT_INFO access to ${APP_USER}..."
+echo ">>> Granting SELECT_CATALOG_ROLE to ${APP_USER}..."
 
 sqlplus -s "SYSTEM/${ORACLE_PASSWORD}@//localhost:1521/FREEPDB1" << 'ENDSQL'
-GRANT SELECT ON V_$SESSION_CONNECT_INFO TO appuser;
+GRANT SELECT_CATALOG_ROLE TO appuser;
 COMMIT;
 EXIT;
 ENDSQL
