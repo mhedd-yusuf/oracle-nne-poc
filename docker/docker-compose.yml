@@ -1,0 +1,26 @@
+services:
+  oracle-db:
+    image: gvenzl/oracle-free:23-slim
+    container_name: oracle-nne-poc
+    ports:
+      - "1521:1521"
+    environment:
+      ORACLE_PASSWORD: Oracle123
+      APP_USER: appuser
+      APP_USER_PASSWORD: AppUser123
+    volumes:
+      # Init scripts run once during first database creation
+      - ./init:/container-entrypoint-initdb.d
+      # NNE config file read by 02_nne_config.sh — edit this file to change server-side NNE settings
+      - ./sqlnet.ora:/opt/oracle/nne_config.ora:ro
+      # Persist data across container restarts
+      - oracle-data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 30s
+      timeout: 20s
+      retries: 30
+      start_period: 180s
+
+volumes:
+  oracle-data:

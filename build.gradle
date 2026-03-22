@@ -1,0 +1,38 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.4.3'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group   = 'com.poc'
+version = '1.0-SNAPSHOT'
+
+// Use sourceCompatibility instead of toolchains.
+// toolchain { languageVersion = 17 } triggers JDK auto-provisioning which
+// can corrupt the jars-9 transformation cache when the download is interrupted.
+// sourceCompatibility compiles with whatever JVM the Gradle daemon is running on
+// (set to Java 17 via IntelliJ: Settings → Gradle → Gradle JVM).
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Brings in spring-jdbc, spring-tx, HikariCP, and spring-core.
+    // Our custom OracleDataSource @Bean causes Spring Boot to back off
+    // from HikariCP auto-configuration, so HikariCP is unused but harmless.
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+
+    // ojdbc8 targets Java 8 bytecode; runs fine on JVM 17.
+    // Provides OracleDataSource and the Oracle Thin JDBC driver.
+    implementation 'com.oracle.database.jdbc:ojdbc8:19.29.0.0'
+}
+
+bootJar {
+    // Produces build/libs/oracle-nne-poc.jar — an executable fat jar
+    archiveFileName = 'oracle-nne-poc.jar'
+}

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="
+           http://www.springframework.org/schema/beans
+           https://www.springframework.org/schema/beans/spring-beans.xsd
+           http://www.springframework.org/schema/context
+           https://www.springframework.org/schema/context/spring-context.xsd">
+
+    <!--
+        Load db.properties from the classpath.
+        All ${...} placeholders below are resolved from this file.
+    -->
+    <context:property-placeholder location="classpath:db.properties"/>
+
+    <!--
+        ═══════════════════════════════════════════════════════════════════
+        OracleDataSource — the core NNE-aware data source bean
+        ═══════════════════════════════════════════════════════════════════
+
+        Property name notes:
+          • "URL"      → maps to OracleDataSource.setURL()
+                         JavaBeans Introspector.decapitalize("URL") = "URL"
+                         (all-caps acronym: first-char rule does not apply)
+          • "user"     → maps to setUser()
+          • "password" → maps to setPassword()
+          • "connectionProperties" → maps to setConnectionProperties(Properties)
+                         Spring converts the <props> element into a
+                         java.util.Properties instance automatically.
+
+        NNE negotiation happens during the TCP handshake, before any SQL is
+        sent.  The four oracle.net.* keys below tell the Oracle Thin JDBC
+        driver what to negotiate with the server.
+    -->
+    <bean id="dataSource"
+          class="oracle.jdbc.pool.OracleDataSource"
+          destroy-method="close">
+
+        <property name="URL"      value="${db.url}"/>
+        <property name="user"     value="${db.user}"/>
+        <property name="password" value="${db.password}"/>
+
+        <property name="connectionProperties">
+            <props>
+                <!-- ── Encryption ───────────────────────────────────────
+                     REQUIRED means the client refuses any plaintext session.
+                     The cipher list is ordered by preference; AES256 is tried
+                     first and the server picks the best match it supports.   -->
+                <prop key="oracle.net.encryption_client">${nne.encryption.client}</prop>
+                <prop key="oracle.net.encryption_types_client">${nne.encryption.types}</prop>
+
+                <!-- ── Integrity / Checksum ──────────────────────────────
+                     Each network packet gets a SHA-256 MAC so tampering is
+                     detected before data reaches the application layer.       -->
+                <prop key="oracle.net.crypto_checksum_client">${nne.checksum.client}</prop>
+                <prop key="oracle.net.crypto_checksum_types_client">${nne.checksum.types}</prop>
+            </props>
+        </property>
+    </bean>
+
+    <!--
+        JdbcTemplate — thin wrapper around DataSource that handles
+        connection acquisition, statement creation, and exception translation.
+    -->
+    <bean id="jdbcTemplate"
+          class="org.springframework.jdbc.core.JdbcTemplate">
+        <constructor-arg ref="dataSource"/>
+    </bean>
+
+    <!--
+        EmployeeRepository — all CRUD operations live here.
+        Receives JdbcTemplate via constructor injection.
+    -->
+    <bean id="employeeRepository"
+          class="com.poc.EmployeeRepository">
+        <constructor-arg ref="jdbcTemplate"/>
+    </bean>
+
+</beans>
