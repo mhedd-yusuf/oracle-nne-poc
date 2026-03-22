@@ -77,6 +77,8 @@ SQLNET.CRYPTO_CHECKSUM_SERVER = REQUIRED
 
 ## Validate encryption from inside the container
 
+### Option A — Interactive sqlplus session
+
 ```bash
 docker exec -it oracle-nne-poc sqlplus appuser/AppUser123@FREEPDB1
 ```
@@ -89,6 +91,20 @@ FROM   v$session_connect_info
 WHERE  sid = SYS_CONTEXT('USERENV', 'SID')
 ORDER  BY 1;
 ```
+
+### Option B — Single docker exec command (no interactive session needed)
+
+```bash
+docker exec oracle-nne-poc bash -c "sqlplus -s appuser/AppUser123@FREEPDB1 @/dev/stdin" <<'EOF'
+SELECT network_service_banner
+FROM   v$session_connect_info
+WHERE  sid = SYS_CONTEXT('USERENV', 'SID')
+ORDER  BY 1;
+EXIT;
+EOF
+```
+
+### Expected outputs
 
 **Encrypted** — output includes:
 ```
@@ -110,7 +126,7 @@ For each scenario:
 2. Edit `docker/sqlnet.ora`
 3. Recreate the container: `cd docker && docker compose down -v && docker compose up -d`
 4. Run the app: `java -jar build/libs/oracle-nne-poc.jar`
-5. Validate inside the container with the sqlplus query above
+5. Validate with the docker exec command (Option B above)
 
 ---
 
