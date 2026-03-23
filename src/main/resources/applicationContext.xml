@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="
+           http://www.springframework.org/schema/beans
+           https://www.springframework.org/schema/beans/spring-beans.xsd
+           http://www.springframework.org/schema/context
+           https://www.springframework.org/schema/context/spring-context.xsd">
+
+    <!-- Resolves ${...} placeholders against application.properties on the classpath -->
+    <context:property-placeholder location="classpath:application.properties"/>
+
+    <!--
+        OracleDataSource bean.
+
+        NNE is configured via the connectionProperties map.
+        The Oracle JDBC Thin driver reads oracle.net.* keys during the TNS handshake
+        to negotiate encryption and integrity checksumming with the server.
+
+        Valid values for encryption_client / crypto_checksum_client:
+            REQUIRED  — must encrypt; reject connections that cannot
+            REQUESTED — prefer encryption; allow plaintext if peer refuses
+            ACCEPTED  — encrypt if the peer requests it; plaintext otherwise
+            REJECTED  — never encrypt
+    -->
+    <bean id="dataSource" class="oracle.jdbc.pool.OracleDataSource" destroy-method="close">
+        <property name="URL"
+                  value="jdbc:oracle:thin:@//${spring.datasource.host}:${spring.datasource.port}/${spring.datasource.service}"/>
+        <property name="user"     value="${spring.datasource.username}"/>
+        <property name="password" value="${spring.datasource.password}"/>
+        <property name="connectionProperties">
+            <props>
+                <!-- NNE encryption level for this client -->
+                <prop key="oracle.net.encryption_client">${nne.encryption.client}</prop>
+                <prop key="oracle.net.encryption_types_client">${nne.encryption.types}</prop>
+
+                <!-- NNE integrity checksum level for this client -->
+                <prop key="oracle.net.crypto_checksum_client">${nne.checksum.client}</prop>
+                <prop key="oracle.net.crypto_checksum_types_client">${nne.checksum.types}</prop>
+
+                <!-- Sets V$SESSION.PROGRAM to identify this app in DB monitoring queries -->
+                <prop key="v$session.program">${app.name}</prop>
+            </props>
+        </property>
+        <!--<property name="connectionCacheProperties">
+            <props merge="default">
+                <prop key="oracle.net.encryption_client">${nne.encryption.client}</prop>
+                <prop key="oracle.net.encryption_types_client">${nne.encryption.types}</prop>
+                <prop key="oracle.net.crypto_checksum_client">${nne.checksum.client}</prop>
+                <prop key="oracle.net.crypto_checksum_types_client">${nne.checksum.types}</prop>
+                <prop key="v$session.program">${app.name}</prop>
+            </props>
+        </property>-->
+    </bean>
+
+    <!-- JdbcTemplate — wraps the DataSource for Spring JDBC operations -->
+    <bean id="jdbcTemplate" class="org.springframework.jdbc.core.JdbcTemplate">
+        <constructor-arg ref="dataSource"/>
+    </bean>
+
+    <!-- EmployeeRepository — CRUD operations on the EMPLOYEES table -->
+    <bean id="employeeRepository" class="com.poc.EmployeeRepository">
+        <constructor-arg ref="jdbcTemplate"/>
+    </bean>
+
+</beans>
