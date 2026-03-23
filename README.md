@@ -43,7 +43,7 @@ docker compose ps   # Status should show "healthy"
 
 ```bash
 # From the project root
-./gradlew bootJar
+./gradlew jar
 java -jar build/libs/oracle-nne-poc.jar
 ```
 
@@ -60,11 +60,11 @@ nne.encryption.client=REQUIRED
 nne.checksum.client=REQUIRED
 ```
 
-> `DataSourceConfig` passes NNE values as Java connection properties via
-> `OracleDataSource.setConnectionProperties()`. The Oracle JDBC **Thin** driver reads NNE
-> settings from `oracle.net.encryption_client` / `oracle.net.crypto_checksum_client`
-> connection properties — **not** from a SECURITY section in the TNS descriptor (that section
-> is only read by OCI clients such as sqlplus).
+> The `dataSource` bean in `applicationContext.xml` passes NNE values via the
+> `connectionProperties` map. The Oracle JDBC **Thin** driver reads NNE settings from
+> `oracle.net.encryption_client` / `oracle.net.crypto_checksum_client` during the TNS
+> handshake — **not** from a SECURITY section in the TNS descriptor (that section is only
+> read by OCI clients such as sqlplus).
 
 **Server-side** — `docker/sqlnet.ora`:
 
@@ -191,8 +191,8 @@ The `PROGRAM` column reflects `app.name` in `application.properties` — change 
 ## Scenarios
 
 > **Note on rebuilding:**
-> - **IntelliJ** — reads `src/main/resources/application.properties` directly from source. Just edit and re-run, no rebuild needed.
-> - **Command line JAR** — run `./gradlew bootJar` after editing `application.properties`.
+> - **IntelliJ** — reads `src/main/resources/application.properties` and `applicationContext.xml` directly from source. Just edit and re-run, no rebuild needed.
+> - **Command line JAR** — run `./gradlew jar` after editing `application.properties`.
 
 For each scenario:
 1. Edit `src/main/resources/application.properties` — client-side NNE settings

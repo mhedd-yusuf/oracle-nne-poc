@@ -5,7 +5,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
-import org.springframework.stereotype.Repository;
 
 import java.sql.PreparedStatement;
 import java.util.List;
@@ -14,10 +13,8 @@ import java.util.Optional;
 
 /**
  * CRUD repository for the EMPLOYEES table.
- * Spring Boot auto-configures JdbcTemplate (from spring-boot-starter-jdbc)
- * and injects it here via constructor injection.
+ * Defined as a bean in applicationContext.xml with a JdbcTemplate injected via constructor.
  */
-@Repository
 public class EmployeeRepository {
 
     private final JdbcTemplate jdbc;
@@ -34,7 +31,6 @@ public class EmployeeRepository {
         return e;
     };
 
-    // Spring Boot auto-wires JdbcTemplate via constructor injection
     public EmployeeRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
