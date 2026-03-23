@@ -12,9 +12,9 @@
     <context:property-placeholder location="classpath:application.properties"/>
 
     <!--
-        OracleDataSource bean.
+        DriverManagerDataSource — creates a new connection per request via DriverManager.
 
-        NNE is configured via the connectionProperties map.
+        NNE is configured via connectionProperties.
         The Oracle JDBC Thin driver reads oracle.net.* keys during the TNS handshake
         to negotiate encryption and integrity checksumming with the server.
 
@@ -24,10 +24,11 @@
             ACCEPTED  — encrypt if the peer requests it; plaintext otherwise
             REJECTED  — never encrypt
     -->
-    <bean id="dataSource" class="oracle.jdbc.pool.OracleDataSource" destroy-method="close">
-        <property name="URL"
+    <bean id="dataSource" class="org.springframework.jdbc.datasource.DriverManagerDataSource">
+        <property name="driverClassName" value="oracle.jdbc.driver.OracleDriver"/>
+        <property name="url"
                   value="jdbc:oracle:thin:@//${spring.datasource.host}:${spring.datasource.port}/${spring.datasource.service}"/>
-        <property name="user"     value="${spring.datasource.username}"/>
+        <property name="username" value="${spring.datasource.username}"/>
         <property name="password" value="${spring.datasource.password}"/>
         <property name="connectionProperties">
             <props>
@@ -43,15 +44,6 @@
                 <prop key="v$session.program">${app.name}</prop>
             </props>
         </property>
-        <!--<property name="connectionCacheProperties">
-            <props merge="default">
-                <prop key="oracle.net.encryption_client">${nne.encryption.client}</prop>
-                <prop key="oracle.net.encryption_types_client">${nne.encryption.types}</prop>
-                <prop key="oracle.net.crypto_checksum_client">${nne.checksum.client}</prop>
-                <prop key="oracle.net.crypto_checksum_types_client">${nne.checksum.types}</prop>
-                <prop key="v$session.program">${app.name}</prop>
-            </props>
-        </property>-->
     </bean>
 
     <!-- JdbcTemplate — wraps the DataSource for Spring JDBC operations -->
