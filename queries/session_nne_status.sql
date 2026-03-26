@@ -2,10 +2,11 @@
 -- Run in SQL Developer connected to: localhost:1521/FREEPDB1 (appuser / AppUser123)
 --
 -- Shows all user sessions from the last 24 hours with their NNE encryption status.
--- Filter by username, machine (host), and program (v$session.program / app.name).
+-- Filter by db name, username, machine (host), and program (v$session.program / app.name).
 -- Remove any AND line you don't need.
 
 SELECT
+    SYS_CONTEXT('USERENV', 'CON_NAME') AS db_name,
     s.sid,
     s.serial#,
     s.username,
@@ -19,9 +20,10 @@ FROM v$session s
 LEFT JOIN v$session_connect_info sci
     ON s.sid = sci.sid AND s.serial# = sci.serial#
 WHERE s.type        = 'USER'
-  AND s.username    = 'APPUSER'               -- Oracle DB user (uppercase)
-  AND s.machine     LIKE '%MacBook%'          -- client hostname
-  AND s.program     LIKE '%oracle-nne-poc%'   -- app.name from application.properties
-  AND s.logon_time >= SYSDATE - 1             -- last 24 hours (change to SYSDATE - 7 for 7 days)
+  AND SYS_CONTEXT('USERENV', 'CON_NAME') = 'FREEPDB1'    -- PDB / service name (uppercase)
+  AND s.username    = 'APPUSER'                           -- Oracle DB user (uppercase)
+  AND s.machine     LIKE '%MacBook%'                      -- client hostname
+  AND s.program     LIKE '%oracle-nne-poc%'               -- app.name from application.properties
+  AND s.logon_time >= SYSDATE - 1                         -- last 24 hours (change to SYSDATE - 7 for 7 days)
 GROUP BY s.sid, s.serial#, s.username, s.program, s.machine, s.logon_time, s.status
 ORDER BY s.logon_time DESC
