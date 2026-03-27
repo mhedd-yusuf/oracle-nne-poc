@@ -136,34 +136,41 @@ To filter by time (e.g. sessions from the last 30 minutes), add:
 
 ### Option B — Single docker exec command (no interactive session needed)
 
-```bash
+```
 docker exec -i oracle-nne-poc sqlplus -s appuser/AppUser123@FREEPDB1 <<'EOF'
-SET LINESIZE 120
+SET LINESIZE 200
 SET PAGESIZE 50
-COLUMN sid        FORMAT 99999   HEADING 'SID'
-COLUMN serial#    FORMAT 9999999 HEADING 'SERIAL#'
-COLUMN program    FORMAT A20     HEADING 'PROGRAM'
-COLUMN machine    FORMAT A20     HEADING 'MACHINE'
-COLUMN logon_time FORMAT A20     HEADING 'LOGON_TIME'
-COLUMN status     FORMAT A10     HEADING 'STATUS'
-COLUMN encrypted  FORMAT A9      HEADING 'ENCRYPTED'
-COLUMN checksum   FORMAT A8      HEADING 'CHECKSUM'
+SET WRAP OFF
+COLUMN db_name    FORMAT A12
+COLUMN sid        FORMAT 9999
+COLUMN serial#    FORMAT 999999
+COLUMN username   FORMAT A10
+COLUMN program    FORMAT A30
+COLUMN machine    FORMAT A20
+COLUMN logon_time FORMAT A20
+COLUMN status     FORMAT A8
+COLUMN encrypted  FORMAT A9
+COLUMN checksum   FORMAT A8
+
 SELECT
+    SYS_CONTEXT('USERENV', 'CON_NAME')                                                                     AS db_name,
     s.sid,
     s.serial#,
+    s.username,
     s.program,
     s.machine,
-    s.logon_time,
+    TO_CHAR(s.logon_time, 'DD-MON-YY HH24:MI:SS')                                                         AS logon_time,
     s.status,
-    MAX(CASE WHEN sci.network_service_banner LIKE '%Encryption service adapter%'        THEN 'YES' ELSE 'NO' END) AS encrypted,
+    MAX(CASE WHEN sci.network_service_banner LIKE '%Encryption service adapter%'          THEN 'YES' ELSE 'NO' END) AS encrypted,
     MAX(CASE WHEN sci.network_service_banner LIKE '%Crypto-checksumming service adapter%' THEN 'YES' ELSE 'NO' END) AS checksum
 FROM v$session s
 LEFT JOIN v$session_connect_info sci
     ON s.sid = sci.sid AND s.serial# = sci.serial#
 WHERE s.type     = 'USER'
-  AND s.username IS NOT NULL
-GROUP BY s.sid, s.serial#, s.program, s.machine, s.logon_time, s.status
+  AND s.username = 'APPUSER'
+GROUP BY s.sid, s.serial#, s.username, s.program, s.machine, s.logon_time, s.status
 ORDER BY s.logon_time DESC;
+
 EXIT;
 EOF
 ```

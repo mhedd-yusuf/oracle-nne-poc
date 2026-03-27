@@ -80,7 +80,7 @@ public class DataSourceConfig {
         props.setProperty("oracle.net.crypto_checksum_types_client", checksumTypes);
         // Sets V$SESSION.PROGRAM to identify this app in DB monitoring queries
         props.setProperty("v$session.program", appName);
-        //ds.setConnectionProperties(props);
+        ds.setConnectionProperties(props);
 
         return ds;
     }
