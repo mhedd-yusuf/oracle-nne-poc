@@ -1,0 +1,47 @@
+-- NNE Session Status Query — docker exec / sqlplus
+-- Container: oracle-nne-poc   |   user: appuser   |   password: AppUser123
+--
+-- Queries V$SESSION which only shows CURRENTLY CONNECTED sessions.
+-- The application must be running and holding an open connection for rows to appear.
+--
+-- Copy and paste the command below into your terminal.
+
+docker exec -i oracle-nne-poc sqlplus -s appuser/AppUser123@FREEPDB1 <<'EOF'
+SET LINESIZE 200
+SET PAGESIZE 50
+SET WRAP OFF
+COLUMN db_name    FORMAT A12
+COLUMN sid        FORMAT 9999
+COLUMN serial#    FORMAT 999999
+COLUMN username   FORMAT A10
+COLUMN program    FORMAT A30
+COLUMN machine    FORMAT A20
+COLUMN logon_time FORMAT A20
+COLUMN status     FORMAT A8
+COLUMN encrypted  FORMAT A9
+COLUMN checksum   FORMAT A8
+
+SELECT
+    SYS_CONTEXT('USERENV', 'CON_NAME')             AS db_name,
+    s.sid,
+    s.serial#,
+    s.username,
+    s.program,
+    s.machine,
+    TO_CHAR(s.logon_time, 'DD-MON-YY HH24:MI:SS')  AS logon_time,
+    s.status,
+    MAX(CASE WHEN sci.network_service_banner LIKE '%Encryption service adapter%'          THEN 'YES' ELSE 'NO' END) AS encrypted,
+    MAX(CASE WHEN sci.network_service_banner LIKE '%Crypto-checksumming service adapter%' THEN 'YES' ELSE 'NO' END) AS checksum
+FROM v$session s
+LEFT JOIN v$session_connect_info sci
+    ON s.sid = sci.sid AND s.serial# = sci.serial#
+WHERE s.type     = 'USER'
+  AND s.username = 'APPUSER'
+  AND s.machine  LIKE '%MacBook%'
+  AND s.program  LIKE '%oracle-nne-poc%'
+  AND SYS_CONTEXT('USERENV', 'CON_NAME') = 'FREEPDB1'
+GROUP BY s.sid, s.serial#, s.username, s.program, s.machine, s.logon_time, s.status
+ORDER BY s.logon_time DESC;
+
+EXIT;
+EOF
